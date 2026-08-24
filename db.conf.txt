@@ -1,0 +1,37 @@
+##############################################################################
+# db.conf  --  Sybase ASE connection & scan settings for compare_procs.sh
+#
+# Copy this file to "db.conf" (same folder as the script) and fill in your
+# real values. db.conf is sourced as a shell file, so keep the KEY="value"
+# format and do not add spaces around the "=".
+#
+# NOTE: Database name and Git repo are NOT set here anymore -- pass them
+# as command line arguments instead:
+#
+#   ./compare_procs.sh <DATABASE_NAME> <GIT_REPO_URL_OR_PATH> [GIT_BRANCH]
+#
+# Examples:
+#   ./compare_procs.sh SalesDB /home/user/repos/sales-app
+#   ./compare_procs.sh SalesDB https://github.com/org/sales-app.git main
+##############################################################################
+
+# ---- Sybase ASE / SAP ASE connection -------------------------------------
+SYBASE_USER="your_db_user"
+SYBASE_PASS="your_db_password"
+SYBASE_SERVER="your_dsquery_or_server_name"   # value normally used with isql -S
+
+# Full path to the isql binary. Leave as "isql" if it's already on PATH.
+ISQL_BIN="isql"
+
+# ---- Git scan settings ---------------------------------------------------
+# Sub-folder inside the repo that contains the stored procedure .sql files
+# (relative to the repo root). Use "." if procs sit at the repo root or are
+# scattered across the whole repo tree (the script scans recursively).
+GIT_PROC_SUBDIR="stored_procedures"
+
+# File extension used for stored procedure files in Git
+GIT_PROC_EXT="sql"
+
+# ---- Output -------------------------------------------------------------
+OUTPUT_DIR="./output"
+OUTPUT_HTML="dashboard.html"
