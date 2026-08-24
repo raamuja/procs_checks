@@ -15,24 +15,69 @@
 # ---------------------------------------------------------------------------
 # REQUIREMENTS
 #   - bash 4+ (associative arrays)
-#   - git            (to read commit dates)
+#   - git            (to read commit dates / clone the repo)
 #   - isql           (Sybase/SAP ASE command line client) reachable on PATH
 #   - standard unix tools: awk, sed, diff, md5sum, date
 #
 # SETUP
-#   1. Copy db.conf.example -> db.conf, fill in your real values
+#   1. Copy db.conf.example -> db.conf, fill in your Sybase connection
+#      details (user, password, server). These stay in the config file
+#      on purpose - never pass credentials as command line arguments.
 #   2. chmod +x compare_procs.sh
-#   3. ./compare_procs.sh
+#
+# USAGE
+#   ./compare_procs.sh <DATABASE_NAME> <GIT_REPO> [GIT_BRANCH]
+#
+#   <DATABASE_NAME>  Sybase ASE database to pull stored procedures from
+#                    (overrides SYBASE_DB in db.conf if that is also set)
+#
+#   <GIT_REPO>      Either:
+#                      - a local path to an already-cloned repo, e.g.
+#                        /home/user/repos/myapp
+#                      - a remote URL, e.g.
+#                        https://github.com/org/myapp.git
+#                        git@github.com:org/myapp.git
+#                    Remote URLs are cloned fresh into a temp folder.
+#                    Local paths are used as-is (run your own `git pull`
+#                    beforehand if you want the latest commits).
+#
+#   [GIT_BRANCH]    Optional branch/tag to check out. Defaults to the
+#                    repo's default branch.
+#
+# EXAMPLES
+#   ./compare_procs.sh SalesDB /home/user/repos/sales-app
+#   ./compare_procs.sh SalesDB https://github.com/org/sales-app.git main
 #
 # The script assumes ONE stored procedure per .sql file in Git, with the
 # filename (minus extension) equal to the procedure name, e.g.
 #   stored_procedures/usp_get_customer.sql   ->  proc "usp_get_customer"
+# The sub-folder to scan (GIT_PROC_SUBDIR) and file extension (GIT_PROC_EXT)
+# are set in db.conf.
 ##############################################################################
 
 set -uo pipefail
 
+usage() {
+  echo "Usage: $0 <DATABASE_NAME> <GIT_REPO_URL_OR_PATH> [GIT_BRANCH]"
+  echo
+  echo "  DATABASE_NAME         Sybase ASE database to compare"
+  echo "  GIT_REPO_URL_OR_PATH  Local repo path OR a remote git URL to clone"
+  echo "  GIT_BRANCH            Optional branch/tag (default: repo default branch)"
+  echo
+  echo "Example:"
+  echo "  $0 SalesDB /home/user/repos/sales-app"
+  echo "  $0 SalesDB https://github.com/org/sales-app.git main"
+  exit 1
+}
+
+[[ $# -lt 2 ]] && usage
+
+ARG_DATABASE_NAME="$1"
+ARG_GIT_REPO="$2"
+ARG_GIT_BRANCH="${3:-}"
+
 # ---------------------------------------------------------------------------
-# 0. Load configuration
+# 0. Load configuration (credentials + scan settings only)
 # ---------------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONF_FILE="${SCRIPT_DIR}/db.conf"
@@ -48,13 +93,14 @@ source "${CONF_FILE}"
 : "${SYBASE_USER:?SYBASE_USER not set in db.conf}"
 : "${SYBASE_PASS:?SYBASE_PASS not set in db.conf}"
 : "${SYBASE_SERVER:?SYBASE_SERVER not set in db.conf}"
-: "${SYBASE_DB:?SYBASE_DB not set in db.conf}"
-: "${GIT_REPO_PATH:?GIT_REPO_PATH not set in db.conf}"
-: "${GIT_PROC_SUBDIR:?GIT_PROC_SUBDIR not set in db.conf}"
+: "${GIT_PROC_SUBDIR:=.}"
 : "${GIT_PROC_EXT:=sql}"
 : "${ISQL_BIN:=isql}"
 : "${OUTPUT_DIR:=./output}"
 : "${OUTPUT_HTML:=dashboard.html}"
+
+# CLI arguments take priority over db.conf
+SYBASE_DB="${ARG_DATABASE_NAME}"
 
 mkdir -p "${OUTPUT_DIR}"
 RUN_DATE="$(date '+%Y-%m-%d %H:%M:%S')"
@@ -69,16 +115,51 @@ for cmd in git diff md5sum awk sed date "${ISQL_BIN}"; do
   fi
 done
 
-if [[ ! -d "${GIT_REPO_PATH}/.git" ]]; then
-  echo "ERROR: ${GIT_REPO_PATH} is not a git repository."
-  exit 1
-fi
-
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "${WORKDIR}"' EXIT
 mkdir -p "${WORKDIR}/prod_raw" "${WORKDIR}/prod_norm" "${WORKDIR}/git_norm" "${WORKDIR}/diffs"
 
+# ---------------------------------------------------------------------------
+# 1b. Resolve the Git repo: clone if it's a URL, use as-is if it's a path
+# ---------------------------------------------------------------------------
+is_git_url() {
+  [[ "$1" =~ ^(https?|git|ssh|file)://.*$ ]] && return 0
+  [[ "$1" =~ ^[A-Za-z0-9._-]+@.*:.*$ ]] && return 0   # git@host:org/repo.git style
+  [[ "$1" == *.git ]] && return 0
+  return 1
+}
+
+if is_git_url "${ARG_GIT_REPO}"; then
+  echo "[0/6] Cloning Git repo ${ARG_GIT_REPO} ..."
+  CLONE_DIR="${WORKDIR}/repo_clone"
+  if [[ -n "${ARG_GIT_BRANCH}" ]]; then
+    if ! git clone --quiet --branch "${ARG_GIT_BRANCH}" "${ARG_GIT_REPO}" "${CLONE_DIR}" 2>"${WORKDIR}/clone.err"; then
+      echo "ERROR: git clone failed:"; cat "${WORKDIR}/clone.err"; exit 1
+    fi
+  else
+    if ! git clone --quiet "${ARG_GIT_REPO}" "${CLONE_DIR}" 2>"${WORKDIR}/clone.err"; then
+      echo "ERROR: git clone failed:"; cat "${WORKDIR}/clone.err"; exit 1
+    fi
+  fi
+  GIT_REPO_PATH="${CLONE_DIR}"
+else
+  GIT_REPO_PATH="${ARG_GIT_REPO%/}"
+  if [[ ! -d "${GIT_REPO_PATH}/.git" ]]; then
+    echo "ERROR: ${GIT_REPO_PATH} is not a git repository (no .git folder found)."
+    exit 1
+  fi
+  if [[ -n "${ARG_GIT_BRANCH}" ]]; then
+    echo "[0/6] Checking out branch '${ARG_GIT_BRANCH}' in ${GIT_REPO_PATH} ..."
+    if ! (cd "${GIT_REPO_PATH}" && git checkout --quiet "${ARG_GIT_BRANCH}"); then
+      echo "ERROR: could not checkout branch '${ARG_GIT_BRANCH}' in ${GIT_REPO_PATH}."
+      exit 1
+    fi
+  fi
+fi
+
 echo "[1/6] Work directory: ${WORKDIR}"
+echo "       Database : ${SYBASE_DB}"
+echo "       Git repo : ${GIT_REPO_PATH}"
 
 # ---------------------------------------------------------------------------
 # 2. Normalization helper
