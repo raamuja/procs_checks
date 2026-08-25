@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Stored Procedure Comparison Dashboard - Local Folder vs Production</title>
+<style>
+  :root{
+    --bg:#0f1724; --panel:#ffffff; --ink:#1f2937; --muted:#6b7280;
+    --match:#16a34a; --gitonly:#2563eb; --prodonly:#d97706; --diff:#dc2626; --dategap:#7c3aed;
+    --line:#e5e7eb;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:"Segoe UI",Helvetica,Arial,sans-serif;
+    background:linear-gradient(180deg,#0f1724 0%,#1e293b 260px, #f3f4f6 260px);
+    color:var(--ink);
+  }
+  .wrap{max-width:1200px;margin:0 auto;padding:24px;}
+  header{padding:28px 0 10px 0;color:#fff;}
+  header h1{margin:0;font-size:26px;font-weight:700;}
+  header p{margin:6px 0 0 0;color:#cbd5e1;font-size:13px;}
+  .cards{display:grid;grid-template-columns:repeat(5,1fr);gap:16px;margin:24px 0;}
+  .card{
+    background:var(--panel);border-radius:12px;padding:18px 16px;
+    box-shadow:0 4px 14px rgba(0,0,0,.08); border-top:4px solid var(--muted);
+  }
+  .card h2{margin:0;font-size:30px;}
+  .card p{margin:4px 0 0 0;color:var(--muted);font-size:12.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;}
+  .card.match{border-top-color:var(--match);}
+  .card.gitonly{border-top-color:var(--gitonly);}
+  .card.prodonly{border-top-color:var(--prodonly);}
+  .card.diff{border-top-color:var(--diff);}
+  .card.dategap{border-top-color:var(--dategap);}
+  .chart{background:var(--panel);border-radius:12px;padding:20px;box-shadow:0 4px 14px rgba(0,0,0,.08);margin-bottom:28px;}
+  .chart h3{margin:0 0 14px 0;font-size:15px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
+  .barrow{display:flex;align-items:center;margin:10px 0;font-size:13px;}
+  .barlabel{width:150px;flex-shrink:0;color:var(--ink);font-weight:600;}
+  .bartrack{flex:1;background:#f1f5f9;border-radius:6px;height:18px;overflow:hidden;margin-right:10px;}
+  .barfill{height:100%;border-radius:6px;}
+  .barval{width:40px;text-align:right;color:var(--muted);}
+  section{background:var(--panel);border-radius:12px;padding:20px;margin-bottom:24px;box-shadow:0 4px 14px rgba(0,0,0,.08);}
+  section h3{margin-top:0;font-size:16px;display:flex;align-items:center;gap:8px;}
+  .badge{display:inline-block;font-size:12px;font-weight:700;color:#fff;padding:2px 9px;border-radius:999px;}
+  .badge.match{background:var(--match);}
+  .badge.gitonly{background:var(--gitonly);}
+  .badge.prodonly{background:var(--prodonly);}
+  .badge.diff{background:var(--diff);}
+  .badge.dategap{background:var(--dategap);}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);}
+  th{color:var(--muted);text-transform:uppercase;font-size:11px;letter-spacing:.04em;}
+  tr.diffrow{cursor:pointer;}
+  tr.diffrow:hover{background:#fef2f2;}
+  .expand-hint{color:var(--muted);font-size:11.5px;font-weight:400;}
+  .diffbox{background:#0b1220;color:#e2e8f0;font-family:Consolas,monospace;font-size:12.5px;
+    padding:14px;border-radius:8px;max-height:320px;overflow:auto;line-height:1.6;}
+  .diffbox .rm{color:#fca5a5;}
+  .diffbox .add{color:#86efac;}
+  .diffbox .ctx{color:#94a3b8;}
+  .gap-high{color:var(--diff);font-weight:700;}
+  .gap-ok{color:var(--muted);}
+  .empty{color:var(--muted);font-style:italic;padding:10px 0;}
+  footer{color:var(--muted);font-size:12px;text-align:center;padding:20px 0 40px 0;}
+  @media (max-width:900px){.cards{grid-template-columns:repeat(2,1fr);}}
+</style>
+<script>
+  function toggleDiff(name){
+    var row = document.getElementById('diff-' + name);
+    if(!row) return;
+    row.style.display = (row.style.display === 'none' || row.style.display === '') ? 'table-row' : 'none';
+  }
+</script>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Stored Procedure Comparison Dashboard</h1>
+    <p>Local SQL Folder vs Sybase ASE (SAP ASE) Production &nbsp;|&nbsp; Generated 2026-08-25 10:36:58</p>
+    <p>Folder procs scanned: 3 &nbsp;|&nbsp; PROD procs scanned: 3</p>
+  </header>
+
+  <div class="cards">
+    <div class="card match"><h2>1</h2><p>Exact Match</p></div>
+    <div class="card gitonly"><h2>1</h2><p>Folder Only</p></div>
+    <div class="card prodonly"><h2>1</h2><p>PROD Only</p></div>
+    <div class="card diff"><h2>1</h2><p>Differences</p></div>
+    <div class="card dategap"><h2>4</h2><p>Total Compared</p></div>
+  </div>
+
+  <div class="chart">
+    <h3>Scenario Distribution</h3>
+    <div class="barrow"><div class="barlabel">Match</div><div class="bartrack"><div class="barfill" style="width:25%;background:var(--match);"></div></div><div class="barval">1</div></div>
+    <div class="barrow"><div class="barlabel">Folder Only</div><div class="bartrack"><div class="barfill" style="width:25%;background:var(--gitonly);"></div></div><div class="barval">1</div></div>
+    <div class="barrow"><div class="barlabel">PROD Only</div><div class="bartrack"><div class="barfill" style="width:25%;background:var(--prodonly);"></div></div><div class="barval">1</div></div>
+    <div class="barrow"><div class="barlabel">Differences</div><div class="bartrack"><div class="barfill" style="width:25%;background:var(--diff);"></div></div><div class="barval">1</div></div>
+  </div>
+
+  <section>
+    <h3><span class="badge match">1</span> Exact Matches (Folder = PROD)</h3>
+    <table>
+      <tr><th>Procedure</th><th>Source File Date</th><th>PROD Created Date</th><th>Date Gap (days)</th></tr>
+      <tr><td>usp_get_customer</td><td>2026-03-01</td><td>2026-04-20</td><td>50</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h3><span class="badge gitonly">2</span> Present in Folder but Missing in PROD</h3>
+    <table>
+      <tr><th>Procedure</th><th>Source File Date</th></tr>
+      <tr><td>usp_new_feature</td><td>2026-06-20</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h3><span class="badge prodonly">3</span> Present in PROD but Missing in Folder</h3>
+    <table>
+      <tr><th>Procedure</th><th>PROD Created Date</th></tr>
+      <tr><td>usp_prod_only</td><td>2026-01-05</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h3><span class="badge diff">4</span> Differences Between Folder and PROD</h3>
+    <table>
+      <tr><th>Procedure</th><th>Source File Date</th><th>PROD Created Date</th><th>Date Gap (days)</th></tr>
+      <tr class="diffrow" onclick="toggleDiff('usp_update_order')">
+      <td>usp_update_order <span class="expand-hint">(click to view word diff)</span></td>
+      <td>2026-05-01</td><td>2026-05-10</td><td>9</td></tr>
+      <tr id="diff-usp_update_order" class="diffdetail" style="display:none">
+      <td colspan="4"><div class="diffbox"><span class="rm">- 'shipped'</span><br>
+<span class="add">+ 'closed'</span><br>
+<span class="add">+ print</span><br>
+<span class="add">+ 'done'</span><br></div></td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h3><span class="badge dategap">5</span> Source File Date vs PROD Created Date (Days)</h3>
+    <table>
+      <tr><th>Procedure</th><th>Source File Date</th><th>PROD Created Date</th><th>Gap (days)</th></tr>
+      <tr><td>usp_get_customer</td><td>2026-03-01</td><td>2026-04-20</td><td class="gap-high">50</td></tr><tr><td>usp_update_order</td><td>2026-05-01</td><td>2026-05-10</td><td class="gap-ok">9</td></tr>
+    </table>
+  </section>
+
+  <footer>Comparison is word/content-based after stripping comments and whitespace differences. Word diffs above show removed (red, from the local folder) and added (green, from PROD) tokens. Source File Date is the file's Git commit date when the folder is a git working copy, otherwise its last-modified timestamp on disk.</footer>
+</div>
+</body>
+</html>
